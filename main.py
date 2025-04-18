@@ -3,6 +3,7 @@ import time
 import psutil
 import threading
 from datetime import datetime
+import gpm
 
 class TuiApp:
     def __init__(self, stdscr):
@@ -19,7 +20,10 @@ class TuiApp:
         curses.init_pair(2, curses.COLOR_BLACK, curses.COLOR_WHITE)
         curses.init_pair(3, curses.COLOR_GREEN, -1)
         curses.init_pair(4, curses.COLOR_RED, -1)
-        curses.mousemask(curses.ALL_MOUSE_EVENTS)
+
+        # Initialize GPM mouse support instead of curses mouse
+        self.gpm = gpm.Gpm()
+        self.gpm.visiblepointer()
 
         self.height, self.width = self.stdscr.getmaxyx()
 
@@ -59,36 +63,39 @@ class TuiApp:
         self.stdscr.refresh()
 
     def handle_mouse(self, event):
-        _, mx, my, _, button = event
+        # Handle GPM mouse event
+        mx, my = event.x, event.y
         self.mouse_x = mx
         self.mouse_y = my
 
-        if button & curses.BUTTON1_CLICKED:
+        if event.buttons & gpm.B_LEFT:
             for widget in self.widgets:
                 if widget.is_inside(mx, my):
                     widget.on_click()
 
     def quit(self):
         self.running = False
+        if hasattr(self, 'gpm'):
+            self.gpm.close()
 
     def run(self):
         while self.running:
             self.draw()
 
             try:
-                self.stdscr.timeout(100)
-                key = self.stdscr.getch()
+                # Check for GPM events first
+                event = self.gpm.getEvent()
+                if event:
+                    self.handle_mouse(event)
+                else:
+                    # Check for keyboard input
+                    self.stdscr.timeout(100)
+                    key = self.stdscr.getch()
 
-                if key == ord('q'):
-                    self.quit()
-                elif key == curses.KEY_MOUSE:
-                    try:
-                        mouse_event = curses.getmouse()
-                        self.handle_mouse(mouse_event)
-                    except:
-                        pass
-                elif key == curses.KEY_RESIZE:
-                    self.height, self.width = self.stdscr.getmaxyx()
+                    if key == ord('q'):
+                        self.quit()
+                    elif key == curses.KEY_RESIZE:
+                        self.height, self.width = self.stdscr.getmaxyx()
             except KeyboardInterrupt:
                 self.quit()
 
